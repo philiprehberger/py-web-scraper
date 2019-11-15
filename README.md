@@ -1,5 +1,9 @@
 # philiprehberger-web-scraper
 
+[![Tests](https://github.com/philiprehberger/py-web-scraper/actions/workflows/publish.yml/badge.svg)](https://github.com/philiprehberger/py-web-scraper/actions/workflows/publish.yml)
+[![PyPI version](https://img.shields.io/pypi/v/philiprehberger-web-scraper.svg)](https://pypi.org/project/philiprehberger-web-scraper/)
+[![License](https://img.shields.io/github/license/philiprehberger/py-web-scraper)](LICENSE)
+
 Lightweight web scraper with rate limiting and CSS selectors.
 
 ## Install
