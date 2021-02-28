@@ -61,6 +61,14 @@ Scraper(
 )
 ```
 
+
+## Development
+
+```bash
+pip install -e .
+python -m pytest tests/ -v
+```
+
 ## License
 
 MIT
