@@ -62,6 +62,14 @@ Scraper(
 ```
 
 
+## API
+
+| Function / Class | Description |
+|------------------|-------------|
+| `Scraper(rate_limit, retry_attempts, retry_delay, timeout, headers)` | Web scraper with rate limiting, retry, and CSS selector extraction |
+| `Page` | A fetched web page with `select_one()`, `select_all()`, `links()`, `images()`, and `title`/`text` properties |
+| `Element` | Wrapper around a parsed element with `text`, `html`, `attr()`, `select_one()`, `select_all()` |
+
 ## Development
 
 ```bash
