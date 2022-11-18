@@ -6,7 +6,7 @@
 
 Lightweight web scraper with rate limiting and CSS selectors.
 
-## Install
+## Installation
 
 ```bash
 pip install philiprehberger-web-scraper
