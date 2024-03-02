@@ -2,8 +2,7 @@
 
 [![Tests](https://github.com/philiprehberger/py-web-scraper/actions/workflows/publish.yml/badge.svg)](https://github.com/philiprehberger/py-web-scraper/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/philiprehberger-web-scraper.svg)](https://pypi.org/project/philiprehberger-web-scraper/)
-[![License](https://img.shields.io/github/license/philiprehberger/py-web-scraper)](LICENSE)
-[![Sponsor](https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ec6cb9)](https://github.com/sponsors/philiprehberger)
+[![Last updated](https://img.shields.io/github/last-commit/philiprehberger/py-web-scraper)](https://github.com/philiprehberger/py-web-scraper/commits/main)
 
 Lightweight web scraper with rate limiting and CSS selectors.
 
@@ -62,7 +61,6 @@ Scraper(
 )
 ```
 
-
 ## API
 
 | Function / Class | Description |
@@ -78,6 +76,24 @@ pip install -e .
 python -m pytest tests/ -v
 ```
 
+## Support
+
+If you find this project useful:
+
+⭐ [Star the repo](https://github.com/philiprehberger/py-web-scraper)
+
+🐛 [Report issues](https://github.com/philiprehberger/py-web-scraper/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+
+💡 [Suggest features](https://github.com/philiprehberger/py-web-scraper/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
+
+❤️ [Sponsor development](https://github.com/sponsors/philiprehberger)
+
+🌐 [All Open Source Projects](https://philiprehberger.com/open-source-packages)
+
+💻 [GitHub Profile](https://github.com/philiprehberger)
+
+🔗 [LinkedIn Profile](https://www.linkedin.com/in/philiprehberger)
+
 ## License
 
-MIT
+[MIT](LICENSE)
