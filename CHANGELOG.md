@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 (2026-04-01)
+
+- Add automatic retry with exponential backoff on transient HTTP errors (429, 503)
+- Add disk-backed response caching via `ResponseCache` to avoid redundant requests
+- Add `extract_table()` helper for pulling HTML tables into list-of-dicts
+- Add `follow_links()` method for crawling paginated content by CSS selector
+- Add proxy rotation support via `proxies` parameter
+- Export `ResponseCache` and `extract_table` in `__all__`
+
 ## 0.1.9 (2026-03-31)
 
 - Standardize README to 3-badge format with emoji Support section
