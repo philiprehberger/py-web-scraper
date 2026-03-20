@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "philiprehberger-web-scraper"
-version = "0.1.6"
+version = "0.1.7"
 description = "Lightweight web scraper with rate limiting and CSS selectors"
 readme = "README.md"
 license = "MIT"

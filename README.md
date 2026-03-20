@@ -6,7 +6,7 @@
 
 Lightweight web scraper with rate limiting and CSS selectors.
 
-## Install
+## Installation
 
 ```bash
 pip install philiprehberger-web-scraper
@@ -40,16 +40,7 @@ Scraper.export_csv(data, "output.csv")
 Scraper.export_json(data, "output.json")
 ```
 
-## Features
-
-- Built-in rate limiting (token bucket)
-- Retry with backoff on 429/5xx errors
-- CSS selector API wrapping BeautifulSoup
-- Crawl mode with same-domain filtering
-- Link and image extraction
-- CSV and JSON export helpers
-
-## Options
+### Options
 
 ```python
 Scraper(
@@ -60,7 +51,6 @@ Scraper(
     headers={...},         # custom headers
 )
 ```
-
 
 ## API
 
