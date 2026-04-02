@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import urljoin, urlparse
@@ -13,7 +13,13 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup, Tag
 
-__all__ = ["Scraper", "Page", "Element"]
+__all__ = [
+    "Scraper",
+    "Page",
+    "Element",
+    "ResponseCache",
+    "extract_table",
+]
 
 
 class Element:
@@ -92,6 +98,84 @@ class Page:
         return result
 
 
+def extract_table(page: Page, selector: str = "table") -> list[dict[str, str]]:
+    """Extract an HTML table into a list of dicts.
+
+    Uses the first ``<tr>`` of the matched table as header keys.  Each
+    subsequent ``<tr>`` becomes a dict mapping header -> cell text.
+
+    Args:
+        page: A fetched :class:`Page` object.
+        selector: CSS selector that matches a ``<table>`` element.
+
+    Returns:
+        A list of dictionaries, one per data row.
+    """
+    tag = page._soup.select_one(selector)
+    if tag is None:
+        return []
+
+    rows = tag.find_all("tr")
+    if len(rows) < 2:
+        return []
+
+    headers: list[str] = []
+    for cell in rows[0].find_all(["th", "td"]):
+        headers.append(cell.get_text(strip=True))
+
+    data: list[dict[str, str]] = []
+    for row in rows[1:]:
+        cells = row.find_all(["td", "th"])
+        row_dict: dict[str, str] = {}
+        for idx, cell in enumerate(cells):
+            key = headers[idx] if idx < len(headers) else f"col_{idx}"
+            row_dict[key] = cell.get_text(strip=True)
+        data.append(row_dict)
+
+    return data
+
+
+class ResponseCache:
+    """Disk-backed response cache to avoid redundant HTTP requests.
+
+    Cached pages are stored as JSON files keyed by a SHA-256 hash of the URL.
+    """
+
+    def __init__(self, cache_dir: str | Path = ".scraper_cache") -> None:
+        self._dir = Path(cache_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+
+    def _key(self, url: str) -> str:
+        return hashlib.sha256(url.encode()).hexdigest()
+
+    def get(self, url: str) -> Page | None:
+        """Return a cached :class:`Page` for *url*, or ``None``."""
+        path = self._dir / f"{self._key(url)}.json"
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return Page(
+            url=payload["url"],
+            html=payload["html"],
+            status_code=payload["status_code"],
+        )
+
+    def put(self, page: Page) -> None:
+        """Store *page* in the cache."""
+        path = self._dir / f"{self._key(page.url)}.json"
+        payload = {
+            "url": page.url,
+            "html": str(page._soup),
+            "status_code": page.status_code,
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def clear(self) -> None:
+        """Remove all cached responses."""
+        for f in self._dir.glob("*.json"):
+            f.unlink()
+
+
 class _RateLimiter:
     """Token bucket rate limiter."""
 
@@ -121,6 +205,8 @@ class Scraper:
         timeout: float = 30.0,
         headers: dict[str, str] | None = None,
         respect_robots: bool = False,
+        cache: ResponseCache | None = None,
+        proxies: list[str] | None = None,
     ) -> None:
         self._limiter = _RateLimiter(rate_limit)
         self._retry_attempts = retry_attempts
@@ -129,21 +215,50 @@ class Scraper:
         self._session = requests.Session()
         self._session.headers.update(headers or {})
         if "User-Agent" not in self._session.headers:
-            self._session.headers["User-Agent"] = "philiprehberger-web-scraper/0.1.0"
+            self._session.headers["User-Agent"] = "philiprehberger-web-scraper/0.2.0"
+        self._cache = cache
+        self._proxies: list[str] = list(proxies) if proxies else []
+        self._proxy_index: int = 0
+
+    def _next_proxy(self) -> dict[str, str] | None:
+        """Return the next proxy dict for requests, or ``None``."""
+        if not self._proxies:
+            return None
+        proxy = self._proxies[self._proxy_index % len(self._proxies)]
+        self._proxy_index += 1
+        return {"http": proxy, "https": proxy}
 
     def get(self, url: str) -> Page:
-        """Fetch a single page."""
+        """Fetch a single page.
+
+        Results are served from cache when a :class:`ResponseCache` is
+        configured and the URL has been fetched before.  Transient errors
+        (HTTP 429 and 503) trigger automatic retry with exponential backoff.
+        """
+        if self._cache is not None:
+            cached = self._cache.get(url)
+            if cached is not None:
+                return cached
+
         self._limiter.wait()
 
         last_error: Exception | None = None
         for attempt in range(self._retry_attempts):
             try:
-                response = self._session.get(url, timeout=self._timeout)
-                if response.status_code == 429 or response.status_code >= 500:
+                proxy = self._next_proxy()
+                response = self._session.get(
+                    url,
+                    timeout=self._timeout,
+                    proxies=proxy,  # type: ignore[arg-type]
+                )
+                if response.status_code in (429, 503) or response.status_code >= 500:
                     if attempt < self._retry_attempts - 1:
                         time.sleep(self._retry_delay * (2 ** attempt))
                         continue
-                return Page(url, response.text, response.status_code)
+                page = Page(url, response.text, response.status_code)
+                if self._cache is not None:
+                    self._cache.put(page)
+                return page
             except requests.RequestException as e:
                 last_error = e
                 if attempt < self._retry_attempts - 1:
@@ -154,9 +269,51 @@ class Scraper:
     def get_json(self, url: str) -> Any:
         """Fetch JSON from a URL."""
         self._limiter.wait()
-        response = self._session.get(url, timeout=self._timeout)
+        proxy = self._next_proxy()
+        response = self._session.get(
+            url,
+            timeout=self._timeout,
+            proxies=proxy,  # type: ignore[arg-type]
+        )
         response.raise_for_status()
         return response.json()
+
+    def follow_links(
+        self,
+        start_url: str,
+        selector: str,
+        max_pages: int = 50,
+    ) -> Iterator[Page]:
+        """Follow links matching *selector* across paginated content.
+
+        Fetches *start_url*, then repeatedly follows the first link matching
+        *selector* until no match is found or *max_pages* is reached.
+
+        Args:
+            start_url: The first page to fetch.
+            selector: CSS selector for the "next" link element.
+            max_pages: Maximum number of pages to yield.
+        """
+        url: str | None = start_url
+        visited: set[str] = set()
+        pages_yielded = 0
+
+        while url and url not in visited and pages_yielded < max_pages:
+            visited.add(url)
+            try:
+                page = self.get(url)
+            except Exception:
+                break
+
+            yield page
+            pages_yielded += 1
+
+            next_el = page.select_one(selector)
+            if next_el:
+                href = next_el.attr("href")
+                url = urljoin(page.url, href) if href else None
+            else:
+                url = None
 
     def crawl(
         self,
@@ -209,7 +366,7 @@ class Scraper:
                     queue.append(link)
 
     @staticmethod
-    def export_csv(data: list[dict], path: str | Path) -> None:
+    def export_csv(data: list[dict[str, Any]], path: str | Path) -> None:
         """Export list of dicts to CSV."""
         if not data:
             return
