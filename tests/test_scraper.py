@@ -208,6 +208,59 @@ class TestProxyRotation:
 
 
 # ---------------------------------------------------------------------------
+# User-Agent rotation
+# ---------------------------------------------------------------------------
+
+
+class TestUserAgentRotation:
+    """User-Agent rotation across requests."""
+
+    @patch("time.sleep")
+    @patch("requests.Session.get")
+    def test_user_agents_rotate(
+        self, mock_get: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        mock_get.return_value = _mock_response(200, "<p>OK</p>")
+        agents = ["UA-1/1.0", "UA-2/1.0", "UA-3/1.0"]
+        scraper = Scraper(rate_limit=0, user_agents=agents)
+
+        scraper.get("https://a.com")
+        assert scraper._session.headers["User-Agent"] == "UA-1/1.0"
+        scraper.get("https://b.com")
+        assert scraper._session.headers["User-Agent"] == "UA-2/1.0"
+        scraper.get("https://c.com")
+        assert scraper._session.headers["User-Agent"] == "UA-3/1.0"
+        scraper.get("https://d.com")  # wraps
+        assert scraper._session.headers["User-Agent"] == "UA-1/1.0"
+
+    @patch("time.sleep")
+    @patch("requests.Session.get")
+    def test_no_user_agents_uses_default(
+        self, mock_get: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        mock_get.return_value = _mock_response(200, "<p>OK</p>")
+        scraper = Scraper(rate_limit=0)
+        scraper.get("https://example.com")
+        assert "philiprehberger-web-scraper" in scraper._session.headers["User-Agent"]
+
+    @patch("time.sleep")
+    @patch("requests.Session.get")
+    def test_user_agent_rotation_in_get_json(
+        self, mock_get: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        resp = _mock_response(200)
+        resp.json.return_value = {"k": "v"}
+        resp.raise_for_status = MagicMock()
+        mock_get.return_value = resp
+
+        scraper = Scraper(rate_limit=0, user_agents=["A/1", "B/2"])
+        scraper.get_json("https://api.example.com/a")
+        assert scraper._session.headers["User-Agent"] == "A/1"
+        scraper.get_json("https://api.example.com/b")
+        assert scraper._session.headers["User-Agent"] == "B/2"
+
+
+# ---------------------------------------------------------------------------
 # follow_links
 # ---------------------------------------------------------------------------
 

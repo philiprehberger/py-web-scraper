@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-06-14)
+
+- Add `ttl` parameter to `ResponseCache` for time-based cache expiration; expired files are removed on next read
+- Add `extract_tables()` to extract every matching HTML table on a page (plural form of `extract_table`)
+- Add `user_agents` parameter to `Scraper` for round-robin User-Agent rotation
+- Bump default User-Agent string to `philiprehberger-web-scraper/0.3.0`
+
 ## 0.2.0 (2026-04-01)
 
 - Add automatic retry with exponential backoff on transient HTTP errors (429, 503)

@@ -67,17 +67,33 @@ page = scraper.get("https://example.com")  # served from disk cache
 cache.clear()  # remove all cached responses
 ```
 
-### Table Extraction
+### Cache TTL
 
-Pull an HTML table into a list of dicts using `extract_table()`:
+Expire cached entries after a number of seconds. Stale files are deleted on the next read so the cache directory does not grow unbounded:
 
 ```python
-from philiprehberger_web_scraper import Scraper, extract_table
+from philiprehberger_web_scraper import ResponseCache
+
+cache = ResponseCache(cache_dir=".scraper_cache", ttl=3600)  # 1 hour
+```
+
+### Table Extraction
+
+Pull an HTML table into a list of dicts using `extract_table()`. Use `extract_tables()` to pull every matching table on the page:
+
+```python
+from philiprehberger_web_scraper import Scraper, extract_table, extract_tables
 
 scraper = Scraper()
 page = scraper.get("https://example.com/data")
+
+# First matching table
 rows = extract_table(page, "table#prices")
 # [{"Product": "Widget", "Price": "$9.99"}, ...]
+
+# All tables on the page
+all_tables = extract_tables(page, "table")
+# [[{...}, ...], [{...}, ...]]
 ```
 
 ### Following Paginated Links
@@ -109,11 +125,27 @@ page = scraper.get("https://example.com")  # uses proxy1
 page = scraper.get("https://example.com/2")  # uses proxy2
 ```
 
+### Rotating User Agents
+
+Rotate the `User-Agent` header round-robin across requests:
+
+```python
+from philiprehberger_web_scraper import Scraper
+
+scraper = Scraper(user_agents=[
+    "Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) Safari/17.5",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/127.0.0.0",
+])
+page = scraper.get("https://example.com")  # uses agent #1
+page = scraper.get("https://example.com/2")  # uses agent #2
+```
+
 ## API
 
 | Function / Class | Description |
 |------------------|-------------|
-| `Scraper(rate_limit, retry_attempts, retry_delay, timeout, headers, cache, proxies)` | Web scraper with rate limiting, retry, caching, and proxy rotation |
+| `Scraper(rate_limit, retry_attempts, retry_delay, timeout, headers, cache, proxies, user_agents)` | Web scraper with rate limiting, retry, caching, proxy rotation, and User-Agent rotation |
 | `Scraper.get(url)` | Fetch a single page with retry and optional caching |
 | `Scraper.get_json(url)` | Fetch JSON from a URL |
 | `Scraper.follow_links(start_url, selector, max_pages)` | Follow paginated links matching a CSS selector |
@@ -122,8 +154,9 @@ page = scraper.get("https://example.com/2")  # uses proxy2
 | `Scraper.export_json(data, path, indent)` | Export data to JSON |
 | `Page` | A fetched web page with `select_one()`, `select_all()`, `links()`, `images()`, and `title`/`text` properties |
 | `Element` | Wrapper around a parsed element with `text`, `html`, `attr()`, `select_one()`, `select_all()` |
-| `ResponseCache(cache_dir)` | Disk-backed response cache with `get()`, `put()`, and `clear()` methods |
-| `extract_table(page, selector)` | Extract an HTML table into a list of dicts |
+| `ResponseCache(cache_dir, ttl=None)` | Disk-backed response cache with optional TTL; `get()`, `put()`, and `clear()` methods |
+| `extract_table(page, selector)` | Extract the first matching HTML table into a list of dicts |
+| `extract_tables(page, selector)` | Extract every matching HTML table; returns a list of row-dict lists |
 
 ## Development
 

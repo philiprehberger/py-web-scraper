@@ -19,6 +19,7 @@ __all__ = [
     "Element",
     "ResponseCache",
     "extract_table",
+    "extract_tables",
 ]
 
 
@@ -98,23 +99,8 @@ class Page:
         return result
 
 
-def extract_table(page: Page, selector: str = "table") -> list[dict[str, str]]:
-    """Extract an HTML table into a list of dicts.
-
-    Uses the first ``<tr>`` of the matched table as header keys.  Each
-    subsequent ``<tr>`` becomes a dict mapping header -> cell text.
-
-    Args:
-        page: A fetched :class:`Page` object.
-        selector: CSS selector that matches a ``<table>`` element.
-
-    Returns:
-        A list of dictionaries, one per data row.
-    """
-    tag = page._soup.select_one(selector)
-    if tag is None:
-        return []
-
+def _table_to_dicts(tag: Tag) -> list[dict[str, str]]:
+    """Convert a single ``<table>`` tag into a list of row dicts."""
     rows = tag.find_all("tr")
     if len(rows) < 2:
         return []
@@ -135,24 +121,76 @@ def extract_table(page: Page, selector: str = "table") -> list[dict[str, str]]:
     return data
 
 
+def extract_table(page: Page, selector: str = "table") -> list[dict[str, str]]:
+    """Extract the first matching HTML table into a list of dicts.
+
+    Uses the first ``<tr>`` of the matched table as header keys.  Each
+    subsequent ``<tr>`` becomes a dict mapping header -> cell text.
+
+    Args:
+        page: A fetched :class:`Page` object.
+        selector: CSS selector that matches a ``<table>`` element.
+
+    Returns:
+        A list of dictionaries, one per data row.
+    """
+    tag = page._soup.select_one(selector)
+    if tag is None:
+        return []
+    return _table_to_dicts(tag)
+
+
+def extract_tables(page: Page, selector: str = "table") -> list[list[dict[str, str]]]:
+    """Extract every matching HTML table into a list of row-dict lists.
+
+    Like :func:`extract_table`, but returns all tables matching *selector*
+    instead of just the first.
+
+    Args:
+        page: A fetched :class:`Page` object.
+        selector: CSS selector that matches one or more ``<table>`` elements.
+
+    Returns:
+        A list with one entry per matched table, each entry a list of row dicts.
+    """
+    tags = page._soup.select(selector)
+    return [_table_to_dicts(tag) for tag in tags]
+
+
 class ResponseCache:
     """Disk-backed response cache to avoid redundant HTTP requests.
 
     Cached pages are stored as JSON files keyed by a SHA-256 hash of the URL.
+    When *ttl* is set, cached entries older than *ttl* seconds are treated as
+    expired and removed from disk on the next :meth:`get`.
     """
 
-    def __init__(self, cache_dir: str | Path = ".scraper_cache") -> None:
+    def __init__(
+        self,
+        cache_dir: str | Path = ".scraper_cache",
+        ttl: float | None = None,
+    ) -> None:
         self._dir = Path(cache_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._ttl = ttl
 
     def _key(self, url: str) -> str:
         return hashlib.sha256(url.encode()).hexdigest()
 
     def get(self, url: str) -> Page | None:
-        """Return a cached :class:`Page` for *url*, or ``None``."""
+        """Return a cached :class:`Page` for *url*, or ``None``.
+
+        When a TTL is configured, expired entries are deleted on miss so the
+        cache directory does not grow unbounded.
+        """
         path = self._dir / f"{self._key(url)}.json"
         if not path.exists():
             return None
+        if self._ttl is not None:
+            age = time.time() - path.stat().st_mtime
+            if age > self._ttl:
+                path.unlink(missing_ok=True)
+                return None
         payload = json.loads(path.read_text(encoding="utf-8"))
         return Page(
             url=payload["url"],
@@ -207,6 +245,7 @@ class Scraper:
         respect_robots: bool = False,
         cache: ResponseCache | None = None,
         proxies: list[str] | None = None,
+        user_agents: list[str] | None = None,
     ) -> None:
         self._limiter = _RateLimiter(rate_limit)
         self._retry_attempts = retry_attempts
@@ -214,11 +253,13 @@ class Scraper:
         self._timeout = timeout
         self._session = requests.Session()
         self._session.headers.update(headers or {})
-        if "User-Agent" not in self._session.headers:
-            self._session.headers["User-Agent"] = "philiprehberger-web-scraper/0.2.0"
+        if not (headers and "User-Agent" in headers):
+            self._session.headers["User-Agent"] = "philiprehberger-web-scraper/0.3.0"
         self._cache = cache
         self._proxies: list[str] = list(proxies) if proxies else []
         self._proxy_index: int = 0
+        self._user_agents: list[str] = list(user_agents) if user_agents else []
+        self._ua_index: int = 0
 
     def _next_proxy(self) -> dict[str, str] | None:
         """Return the next proxy dict for requests, or ``None``."""
@@ -227,6 +268,14 @@ class Scraper:
         proxy = self._proxies[self._proxy_index % len(self._proxies)]
         self._proxy_index += 1
         return {"http": proxy, "https": proxy}
+
+    def _apply_next_user_agent(self) -> None:
+        """Rotate the session's User-Agent header if a pool is configured."""
+        if not self._user_agents:
+            return
+        ua = self._user_agents[self._ua_index % len(self._user_agents)]
+        self._ua_index += 1
+        self._session.headers["User-Agent"] = ua
 
     def get(self, url: str) -> Page:
         """Fetch a single page.
@@ -245,6 +294,7 @@ class Scraper:
         last_error: Exception | None = None
         for attempt in range(self._retry_attempts):
             try:
+                self._apply_next_user_agent()
                 proxy = self._next_proxy()
                 response = self._session.get(
                     url,
@@ -269,6 +319,7 @@ class Scraper:
     def get_json(self, url: str) -> Any:
         """Fetch JSON from a URL."""
         self._limiter.wait()
+        self._apply_next_user_agent()
         proxy = self._next_proxy()
         response = self._session.get(
             url,

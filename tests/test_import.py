@@ -12,5 +12,12 @@ def test_all_exports() -> None:
     """Verify all public names are exported in __all__."""
     from philiprehberger_web_scraper import __all__
 
-    expected = {"Scraper", "Page", "Element", "ResponseCache", "extract_table"}
+    expected = {
+        "Scraper",
+        "Page",
+        "Element",
+        "ResponseCache",
+        "extract_table",
+        "extract_tables",
+    }
     assert set(__all__) == expected

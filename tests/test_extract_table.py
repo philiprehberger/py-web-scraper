@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from philiprehberger_web_scraper import Page, extract_table
+from philiprehberger_web_scraper import Page, extract_table, extract_tables
 
 
 TABLE_HTML = """
@@ -69,3 +69,40 @@ def test_extract_table_th_in_body() -> None:
     page = Page("https://example.com", html, 200)
     rows = extract_table(page)
     assert rows == [{"Key": "color", "Value": "blue"}]
+
+
+def test_extract_tables_returns_all() -> None:
+    html = """
+    <html><body>
+    <table>
+      <tr><th>A</th><th>B</th></tr>
+      <tr><td>1</td><td>2</td></tr>
+    </table>
+    <table>
+      <tr><th>X</th><th>Y</th></tr>
+      <tr><td>9</td><td>8</td></tr>
+      <tr><td>7</td><td>6</td></tr>
+    </table>
+    </body></html>
+    """
+    page = Page("https://example.com", html, 200)
+    tables = extract_tables(page)
+    assert len(tables) == 2
+    assert tables[0] == [{"A": "1", "B": "2"}]
+    assert tables[1] == [{"X": "9", "Y": "8"}, {"X": "7", "Y": "6"}]
+
+
+def test_extract_tables_empty_when_no_match() -> None:
+    page = Page("https://example.com", "<html><body><p>nope</p></body></html>", 200)
+    assert extract_tables(page, "table") == []
+
+
+def test_extract_tables_with_selector() -> None:
+    html = """
+    <table id="prices"><tr><th>Item</th></tr><tr><td>Widget</td></tr></table>
+    <table id="other"><tr><th>X</th></tr><tr><td>z</td></tr></table>
+    """
+    page = Page("https://example.com", html, 200)
+    tables = extract_tables(page, "table#prices")
+    assert len(tables) == 1
+    assert tables[0] == [{"Item": "Widget"}]
