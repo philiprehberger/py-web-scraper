@@ -134,3 +134,42 @@ def test_element_str() -> None:
     el = page.select_one("h1")
     assert el is not None
     assert str(el) == "Hello"
+
+
+META_HTML = """
+<html>
+<head>
+  <title>Meta Page</title>
+  <meta name="description" content="A test page">
+  <meta name="keywords" content="a, b, c">
+  <meta property="og:title" content="OG Title">
+  <meta charset="utf-8">
+</head>
+<body><p>Body</p></body>
+</html>
+"""
+
+
+def test_meta_by_name() -> None:
+    page = Page("https://example.com", META_HTML, 200)
+    assert page.meta("description") == "A test page"
+
+
+def test_meta_by_property() -> None:
+    page = Page("https://example.com", META_HTML, 200)
+    assert page.meta("og:title") == "OG Title"
+
+
+def test_meta_missing() -> None:
+    page = Page("https://example.com", META_HTML, 200)
+    assert page.meta("author") is None
+
+
+def test_meta_tags_collects_all() -> None:
+    page = Page("https://example.com", META_HTML, 200)
+    tags = page.meta_tags()
+    assert tags["description"] == "A test page"
+    assert tags["keywords"] == "a, b, c"
+    assert tags["og:title"] == "OG Title"
+    # charset meta has no name/property/content -> skipped
+    assert "charset" not in tags

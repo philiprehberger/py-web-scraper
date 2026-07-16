@@ -9,7 +9,14 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import requests
 
-from philiprehberger_web_scraper import Page, ResponseCache, Scraper
+import pytest
+
+from philiprehberger_web_scraper import (
+    Page,
+    ResponseCache,
+    RobotsDisallowedError,
+    Scraper,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -361,3 +368,61 @@ class TestExport:
         path = tmp_path / "out.json"
         Scraper.export_json(data, path)
         assert '"key"' in path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# robots.txt enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestRespectRobots:
+    """respect_robots wires robots.txt into fetching."""
+
+    @patch("requests.Session.get")
+    def test_disabled_by_default_skips_robots(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = _mock_response(200, "<p>OK</p>")
+        scraper = Scraper(rate_limit=0)  # respect_robots defaults to False
+        page = scraper.get("https://example.com/page")
+        assert page.status_code == 200
+        # Only the page itself is fetched — no robots.txt request.
+        assert mock_get.call_count == 1
+
+    @patch("requests.Session.get")
+    def test_allows_when_robots_permits(self, mock_get: MagicMock) -> None:
+        mock_get.side_effect = [
+            _mock_response(200, "User-agent: *\nAllow: /"),
+            _mock_response(200, "<p>OK</p>"),
+        ]
+        scraper = Scraper(rate_limit=0, respect_robots=True)
+        page = scraper.get("https://example.com/page")
+        assert page.status_code == 200
+
+    @patch("requests.Session.get")
+    def test_disallows_when_robots_forbids(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = _mock_response(200, "User-agent: *\nDisallow: /")
+        scraper = Scraper(rate_limit=0, respect_robots=True)
+        with pytest.raises(RobotsDisallowedError):
+            scraper.get("https://example.com/secret")
+
+    @patch("requests.Session.get")
+    def test_missing_robots_allows(self, mock_get: MagicMock) -> None:
+        mock_get.side_effect = [
+            _mock_response(404, "Not found"),
+            _mock_response(200, "<p>OK</p>"),
+        ]
+        scraper = Scraper(rate_limit=0, respect_robots=True)
+        page = scraper.get("https://example.com/page")
+        assert page.status_code == 200
+
+    @patch("requests.Session.get")
+    def test_robots_fetched_once_per_origin(self, mock_get: MagicMock) -> None:
+        mock_get.side_effect = [
+            _mock_response(200, "User-agent: *\nAllow: /"),
+            _mock_response(200, "<p>one</p>"),
+            _mock_response(200, "<p>two</p>"),
+        ]
+        scraper = Scraper(rate_limit=0, respect_robots=True)
+        scraper.get("https://example.com/a")
+        scraper.get("https://example.com/b")
+        # 1 robots.txt + 2 pages == 3 (robots.txt not re-fetched)
+        assert mock_get.call_count == 3

@@ -4,6 +4,8 @@
 [![PyPI version](https://img.shields.io/pypi/v/philiprehberger-web-scraper.svg)](https://pypi.org/project/philiprehberger-web-scraper/)
 [![Last updated](https://img.shields.io/github/last-commit/philiprehberger/py-web-scraper)](https://github.com/philiprehberger/py-web-scraper/commits/main)
 
+![philiprehberger-web-scraper](https://raw.githubusercontent.com/philiprehberger/py-web-scraper/main/package-card.webp)
+
 Lightweight web scraper with rate limiting and CSS selectors.
 
 ## Installation
@@ -141,20 +143,54 @@ page = scraper.get("https://example.com")  # uses agent #1
 page = scraper.get("https://example.com/2")  # uses agent #2
 ```
 
+### Respecting robots.txt
+
+Enable `respect_robots` to honor each origin's `robots.txt`. The file is fetched
+once per origin and cached; disallowed URLs raise `RobotsDisallowedError` from
+`get()` (and are skipped automatically during `crawl()`/`follow_links()`):
+
+```python
+from philiprehberger_web_scraper import Scraper, RobotsDisallowedError
+
+scraper = Scraper(respect_robots=True)
+try:
+    page = scraper.get("https://example.com/private")
+except RobotsDisallowedError as e:
+    print(f"blocked: {e.url}")
+```
+
+### Meta Tags
+
+Read `<meta>` tags (including Open Graph `og:*` properties) from a page:
+
+```python
+from philiprehberger_web_scraper import Scraper
+
+scraper = Scraper()
+page = scraper.get("https://example.com")
+
+page.meta("description")   # "Example description"
+page.meta("og:title")      # "Example — Open Graph title"
+page.meta_tags()           # {"description": "...", "og:title": "...", ...}
+```
+
 ## API
 
 | Function / Class | Description |
 |------------------|-------------|
-| `Scraper(rate_limit, retry_attempts, retry_delay, timeout, headers, cache, proxies, user_agents)` | Web scraper with rate limiting, retry, caching, proxy rotation, and User-Agent rotation |
+| `Scraper(rate_limit, retry_attempts, retry_delay, timeout, headers, respect_robots, cache, proxies, user_agents)` | Web scraper with rate limiting, retry, caching, proxy rotation, User-Agent rotation, and optional robots.txt enforcement |
 | `Scraper.get(url)` | Fetch a single page with retry and optional caching |
 | `Scraper.get_json(url)` | Fetch JSON from a URL |
 | `Scraper.follow_links(start_url, selector, max_pages)` | Follow paginated links matching a CSS selector |
 | `Scraper.crawl(start_url, max_pages, same_domain, next_selector)` | Crawl pages starting from a URL |
 | `Scraper.export_csv(data, path)` | Export list of dicts to CSV |
 | `Scraper.export_json(data, path, indent)` | Export data to JSON |
-| `Page` | A fetched web page with `select_one()`, `select_all()`, `links()`, `images()`, and `title`/`text` properties |
+| `Page` | A fetched web page with `select_one()`, `select_all()`, `links()`, `images()`, `meta()`, `meta_tags()`, and `title`/`text` properties |
+| `Page.meta(name)` | Return a `<meta>` tag's content by `name` or `property` (e.g. `og:title`), or `None` |
+| `Page.meta_tags()` | Return all `<meta>` tags as a `{name/property: content}` dict |
 | `Element` | Wrapper around a parsed element with `text`, `html`, `attr()`, `select_one()`, `select_all()` |
 | `ResponseCache(cache_dir, ttl=None)` | Disk-backed response cache with optional TTL; `get()`, `put()`, and `clear()` methods |
+| `RobotsDisallowedError` | Raised by `get()` when `respect_robots` blocks a URL disallowed by robots.txt |
 | `extract_table(page, selector)` | Extract the first matching HTML table into a list of dicts |
 | `extract_tables(page, selector)` | Extract every matching HTML table; returns a list of row-dict lists |
 

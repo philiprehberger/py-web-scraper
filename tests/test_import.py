@@ -17,6 +17,7 @@ def test_all_exports() -> None:
         "Page",
         "Element",
         "ResponseCache",
+        "RobotsDisallowedError",
         "extract_table",
         "extract_tables",
     }

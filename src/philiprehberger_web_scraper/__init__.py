@@ -8,6 +8,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Iterator
+from urllib import robotparser
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -18,9 +19,20 @@ __all__ = [
     "Page",
     "Element",
     "ResponseCache",
+    "RobotsDisallowedError",
     "extract_table",
     "extract_tables",
 ]
+
+_DEFAULT_USER_AGENT = "philiprehberger-web-scraper/0.4.0"
+
+
+class RobotsDisallowedError(Exception):
+    """Raised when ``respect_robots`` blocks a fetch disallowed by robots.txt."""
+
+    def __init__(self, url: str) -> None:
+        super().__init__(f"Fetching disallowed by robots.txt: {url}")
+        self.url = url
 
 
 class Element:
@@ -96,6 +108,40 @@ class Page:
             if absolute:
                 src = urljoin(self.url, src)
             result.append(src)
+        return result
+
+    def meta(self, name: str) -> str | None:
+        """Return the ``content`` of a ``<meta>`` tag by name or property.
+
+        Matches either ``<meta name="...">`` or ``<meta property="...">``
+        (so both ``description`` and Open Graph keys like ``og:title`` work).
+
+        Args:
+            name: The ``name`` or ``property`` attribute to look up.
+
+        Returns:
+            The tag's ``content`` value, or ``None`` if not found.
+        """
+        tag = self._soup.find("meta", attrs={"name": name})
+        if tag is None:
+            tag = self._soup.find("meta", attrs={"property": name})
+        if tag is None:
+            return None
+        content = tag.get("content")
+        return str(content) if content is not None else None
+
+    def meta_tags(self) -> dict[str, str]:
+        """Return all ``<meta>`` tags as a ``{name/property: content}`` dict.
+
+        When both a ``name`` and ``property`` attribute are present, ``name``
+        takes precedence. Tags without a key or without ``content`` are skipped.
+        """
+        result: dict[str, str] = {}
+        for tag in self._soup.find_all("meta"):
+            key = tag.get("name") or tag.get("property")
+            content = tag.get("content")
+            if key and content is not None:
+                result[str(key)] = str(content)
         return result
 
 
@@ -254,12 +300,16 @@ class Scraper:
         self._session = requests.Session()
         self._session.headers.update(headers or {})
         if not (headers and "User-Agent" in headers):
-            self._session.headers["User-Agent"] = "philiprehberger-web-scraper/0.3.0"
+            self._session.headers["User-Agent"] = _DEFAULT_USER_AGENT
         self._cache = cache
         self._proxies: list[str] = list(proxies) if proxies else []
         self._proxy_index: int = 0
         self._user_agents: list[str] = list(user_agents) if user_agents else []
         self._ua_index: int = 0
+        self._respect_robots = respect_robots
+        # Per-origin robots.txt parsers; value is None when no usable
+        # robots.txt exists for that origin (fetch allowed).
+        self._robots: dict[str, robotparser.RobotFileParser | None] = {}
 
     def _next_proxy(self) -> dict[str, str] | None:
         """Return the next proxy dict for requests, or ``None``."""
@@ -277,17 +327,56 @@ class Scraper:
         self._ua_index += 1
         self._session.headers["User-Agent"] = ua
 
+    def _robots_allows(self, url: str) -> bool:
+        """Return True if *url* may be fetched under the origin's robots.txt.
+
+        When ``respect_robots`` is disabled this is always True. The robots.txt
+        for each origin is fetched once (via the session) and cached; origins
+        with no reachable/parseable robots.txt are treated as allow-all.
+        """
+        if not self._respect_robots:
+            return True
+
+        parsed = urlparse(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin not in self._robots:
+            parser: robotparser.RobotFileParser | None = robotparser.RobotFileParser()
+            try:
+                resp = self._session.get(
+                    urljoin(origin, "/robots.txt"), timeout=self._timeout
+                )
+                if resp.status_code >= 400:
+                    parser = None
+                else:
+                    parser.parse(resp.text.splitlines())
+            except requests.RequestException:
+                parser = None
+            self._robots[origin] = parser
+
+        parser = self._robots[origin]
+        if parser is None:
+            return True
+        user_agent = self._session.headers.get("User-Agent", "*")
+        return parser.can_fetch(str(user_agent), url)
+
     def get(self, url: str) -> Page:
         """Fetch a single page.
 
         Results are served from cache when a :class:`ResponseCache` is
         configured and the URL has been fetched before.  Transient errors
         (HTTP 429 and 503) trigger automatic retry with exponential backoff.
+
+        Raises:
+            RobotsDisallowedError: If ``respect_robots`` is enabled and the
+                origin's robots.txt disallows *url*.
         """
         if self._cache is not None:
             cached = self._cache.get(url)
             if cached is not None:
                 return cached
+
+        if not self._robots_allows(url):
+            raise RobotsDisallowedError(url)
 
         self._limiter.wait()
 

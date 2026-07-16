@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 (2026-07-15)
+
+- Implement the `respect_robots` parameter (previously accepted but ignored): honor each origin's robots.txt, caching it per origin; disallowed URLs raise the new `RobotsDisallowedError` and are skipped during `crawl()`/`follow_links()`
+- Add `Page.meta()` and `Page.meta_tags()` for reading `<meta>` tags, including Open Graph `og:*` properties
+- Export `RobotsDisallowedError` in `__all__`
+- Bump default User-Agent string to `philiprehberger-web-scraper/0.4.0`
+- Add README card image for registry rendering
+
 ## 0.3.0 (2026-06-14)
 
 - Add `ttl` parameter to `ResponseCache` for time-based cache expiration; expired files are removed on next read
